@@ -1,2 +1,11 @@
-# rubika_advanced_robot
-An advanced anti-spam, anti-link and anti-advertisement bot for rubica messenger with python language and rubpy library | A complete group management bot
+# ربات ضد لینک و ضد اسپم قدرتمند و پیشرفته برای پیامرسان روبیکا
+
+این ربات با استفاده از کتابخانه قدرتمند rubpy نوشته شده است و این موضوع باعث شده است که این ربات سرعت بالایی داشته باشد و می‌تواند به صورت همزمان در چند گروه فعال باشد!
+
+** قابلیت های ربات:
+- ضد اسپم
+- ضد لینک و تبلیغات
+  - یک مدیریت گروه کامل
+  - فعالسازی روی حساب کاربری
+  - امکان قفل کردن ارسال انواع فایل
+  - و...
