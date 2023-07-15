@@ -7,6 +7,7 @@ from re import findall
 from spam import is_spam
 
 owner_key = 'Owner_Key'
+# Set A owner key for send it to bot pv for verify
 
 connection = connect('robot.db')
 aiohttp = AsyncClient()
@@ -14,6 +15,7 @@ bot_admins: dict = {}
 groups_admins: dict = {}
 
 # setup
+# get informaion of db
 try:
     cursor = connection.cursor()
     cursor.execute('SELECT * FROM admins;')
@@ -38,8 +40,10 @@ except OperationalError:
     pass
 except IndexError:
     pass
+# End setup
 
 async def auto_create_tables():
+    # this method for create tables if not exists and save data
     cursor = connection.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS groups(
             group_guid VARCHAR(32) PRIMARY KEY,
@@ -57,24 +61,40 @@ async def auto_create_tables():
     connection.commit()
 
 async def add_admin(user_guid: str, type: int) -> bool:
+    # this func for add bot admin
     cursor = connection.cursor()
     cursor.execute('INSERT OR REPLACE INTO admins(user_guid, type) VALUES(?, ?)', (user_guid, type))
     connection.commit()
     return True
 
 async def update_admins(group_guid: str, admins: str):
+    # you can update group admins by this func
     cursor = connection.cursor()
     cursor.execute('UPDATE groups SET admins = ? WHERE group_guid = ?', (admins.strip(','), group_guid))
     connection.commit()
     return True
 
-async def add_group(group_guid: str) -> bool:
+async def add_group(group_guid: str, client: Client) -> bool:
+    # get group info and save info in db
+    result = await client.get_group_admin_members(group_guid)
+    admins = {}
+    admins_text = ''
+    for admin in result.in_chat_members:
+        if admin.join_type.__eq__('Creator'):
+            admins[admin.member_guid] = 1
+            admins_text += '{}:1,'.format(admin.member_guid)
+        else:
+            admins[admin.member_guid] = 2
+            admins_text += '{}:2,'.format(admin.member_guid)
+    groups_admins[group_guid] = admins
     cursor = connection.cursor()
-    cursor.execute('INSERT OR REPLACE INTO groups(group_guid) VALUES(?)', (group_guid,))
+    cursor.execute('INSERT OR REPLACE INTO groups(group_guid, admins) VALUES(?, ?)',
+                   (group_guid, admins_text.strip(',')))
     connection.commit()
     return True
 
 async def get_group(guid: str):
+    # get group info of db
     try:
         cursor = connection.cursor()
         cursor.execute('SELECT * FROM groups WHERE group_guid=?;', (guid,))
@@ -83,6 +103,7 @@ async def get_group(guid: str):
         return False
 
 async def get_jokes() -> str:
+    # get random jok of cb api and send jok for user
     url = choice(['http://api.codebazan.ir/jok/',
                   'http://api.codebazan.ir/jok/khatere',
                   'http://api.codebazan.ir/jok/pa-na-pa/',
@@ -91,7 +112,17 @@ async def get_jokes() -> str:
     if response.status_code.__eq__(200):
         return response.text
 
+async def get_date() -> str:
+    # get now date
+    response = await aiohttp.get('http://api.codebazan.ir/time-date/?json=all')
+    if response.status_code.__eq__(200):
+        response = response.json().get('result')
+    now_time: str = ''.join(['• ساعت: ', response.get('timefa')])
+    now_date: str = ''.join(['\n', '• تاریخ: ', response.get('datefa')])
+    return now_time+now_date
+
 async def is_url(text: str) -> bool:
+    # check text and if text is ad or link
     result = findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', text)
     return False if result.__eq__([]) else True
 
@@ -106,11 +137,11 @@ async def group_handler(client: Client, update: Message):
             await is_spam(author_guid, client, object_guid)):
             return await client.delete_messages(object_guid, [message_id])
 
-        if not author_guid in bot_admins.keys():
-            if await is_url(text) or '@'in text:
+        if not author_guid in groups_admins[object_guid]['admins'].keys():
+            if 'forwarded_from' in update.to_dict().get('message').keys():
                 return await client.delete_messages(object_guid, [message_id])
 
-            elif 'forwarded_from' in update.to_dict().get('message').keys():
+            elif text != None and await is_url(text) or '@'in text:
                 return await client.delete_messages(object_guid, [message_id])
 
         if text.__eq__('جوک'):
@@ -120,10 +151,30 @@ async def group_handler(client: Client, update: Message):
                 reply_to_message_id=message_id
             )
 
+        elif text.__eq__('تاریخ'):
+            await client.send_message(
+                object_guid=object_guid,
+                message=await get_date(),
+                reply_to_message_id=message_id
+            )
+
+        if author_guid in groups_admins[object_guid]['admins'].keys():
+            if text.__eq__('بستن گروه'):
+                await client.set_group_default_access(object_guid, [])
+                await client.send_message(object_guid,
+                                          message='گروه بسته شد.',
+                                          reply_to_message_id=message_id)
+
+            elif text.replace(' ', '').__eq__('بازکردنگروه'):
+                await client.set_group_default_access(object_guid, ['SendMessages'])
+                await client.send_message(object_guid,
+                                          message='گروه باز شد.',
+                                          reply_to_message_id=message_id)
+
     else:
         if author_guid in bot_admins.keys() and bot_admins.get(author_guid).__eq__(1):
             if text.replace(' ', '') == 'فعالشو':
-                await add_group(object_guid)
+                await add_group(object_guid, client)
                 await client.send_message(
                     object_guid=object_guid,
                     message='ربات رو تو گروه فعال کردم 😉🔥', reply_to_message_id=message_id)
@@ -155,7 +206,7 @@ async def main():
                         admins[admin.member_guid] = 2
                         admins_text += '{}:2,'.format(admin.member_guid)
                 #print(admins)
-                groups_admins[key] = admins
+                groups_admins[key] = {'admins': admins}
                 await update_admins(key, admins_text)
 
         @client.on(handlers.MessageUpdates(models.is_group()))

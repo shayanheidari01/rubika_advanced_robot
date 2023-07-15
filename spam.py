@@ -10,7 +10,7 @@ async def is_spam(user_id: str, client: Client, object_guid: str):
     try:
         usr = spams[user_id]
         usr['messages'] += 1
-    except IndexError:
+    except KeyError:
         spams[user_id] = {'next_time': int(time()) + max, 'messages': 1, 'banned': 0}
         usr = spams[user_id]
 
